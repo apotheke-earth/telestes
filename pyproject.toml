@@ -1,7 +1,7 @@
 [project]
 name = "telestes"
 version = "0.1.0"
-description = ""
+description = "transformer-based reinforcment learning agents."
 authors = [
     {name = "Vasilis Valatsos",email = "aethrvmn@apotheke.earth"}
 ]
@@ -16,7 +16,6 @@ dependencies = [
 
 [tool.poetry]
 packages = [{include = "telestes", from = "src"}]
-
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
