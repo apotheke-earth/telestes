@@ -1,4 +1,5 @@
 import os
+import sys
 
 import torch
 import numpy as np
@@ -55,11 +56,12 @@ class Agent:
         self._name = name
         self._verbose = verbose
 
+        script_path = os.path.dirname(os.path.abspath(sys.modules['__main__'].__file__))
         self.path = os.path.join(
+            script_path,
             chkpt_dir,
             'ppo'
         )
-        # os.makedirs(self.path, exist_ok=True)
  
         self.device = device
 
@@ -72,7 +74,7 @@ class Agent:
         self._actor_clip_grad_norm = actor_clip_grad_norm
 
         self.critic = ValueNetwork(
-            input_dims=state_dims,
+            input_dims=input_dims,
             device=device,
             **critic_hparams
         )
@@ -81,25 +83,19 @@ class Agent:
         self._memory = self._set_memory()
 
         if load:
-            if os.path.exists(os.path.join(self.path, f"{self._name}.pt")):
-                self._load()
-                load_successfully = True
-            else:
-                RaiseError()
+            self._load()
 
-        if self.verbose:
-            if load_successfully:
-                print(f"agent successfully loaded from {self.path}/{self._name}")
+        if self._verbose:
             actor_params = sum(p.numel() for p in self.actor.parameters())
             critic_params = sum(p.numel() for p in self.critic.parameters())
             print(f"actor ready on {self.device}. total params: {actor_params}")
             print(f"critic ready on {self.device}. total params: {critic_params}")
-            print(f"{self.name} initialised with {actor_params+critic_params} params.")
+            print(f"{self._name} initialised with {actor_params+critic_params} params.")
 
     def choose_action(
         self,
-        state: List[Any]|torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        state: list[any]|torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         state = self._convert_to_tensor(state).to(self.device)
         dist, value = self._sample_networks(state)
@@ -111,7 +107,7 @@ class Agent:
 
     def store(
         self,
-        state: Any,
+        state: any,
         action: torch.Tensor,
         probs: torch.Tensor,
         value: torch.Tensor,
@@ -128,16 +124,16 @@ class Agent:
         for key in self.data:
             self._memory[key].append(args[key])
 
-    def learn(self) -> Dict[str, List[float]]:
+    def learn(self) -> dict[str, list[float]]:
         """
         Main learning function for PPO agents.
         For details look up the paper in arxiv  
         """
         num_states = len(self._memory['states'])
         loss_history = dict(
-            actor = []
-            critic = []
-            entropy = []
+            actor = [],
+            critic = [],
+            entropy = [],
             total = []
         )
         for _ in tqdm(range(self._epochs), disable=not self._verbose, desc="Learning Epoch", leave=False):
@@ -158,12 +154,69 @@ class Agent:
         torch.cuda.empty_cache()
         return loss_history
 
+    def save(self) -> None:
+        os.makedirs(self.path, exist_ok=True)
+
+        path = os.path.join(
+            self.path,
+            f"{self._name}.pt"
+        )
+
+        to_save = dict(
+            actor = dict(
+                network = self.actor.state_dict(),
+                optimizer = self.actor.optimizer.state_dict()
+            ),
+            critic = dict(
+                network = self.critic.state_dict(),
+                optimizer = self.critic.optimizer.state_dict()
+            )
+        )
+        torch.save(
+            to_save,
+            path
+        )
+        if self._verbose:
+            print(f"Agent saved at {path}")
+
+    def _load(self) -> None:
+        path = os.path.join(
+            self.path,
+            f"{self._name}.pt"
+        )
+        print(path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Checkpoint {path} does not exist.")
+
+        chkpt = torch.load(
+            os.path.join(
+                self.path,
+                f"{self._name}.pt"
+            ),
+            map_location=self.device,
+            weights_only=True
+        )
+        self.actor.load_state_dict(
+            chkpt['actor']['network']
+        )
+        self.actor.optimizer.load_state_dict(
+            chkpt['actor']['optimizer']
+        )
+        self.critic.load_state_dict(
+            chkpt['critic']['network']
+        )
+        self.critic.optimizer.load_state_dict(
+            chkpt['critic']['optimizer']
+        )
+        if self._verbose:
+            print(f"Agent successfully loaded from {path}")
+
     def _train_networks(
         self,
         states: torch.Tensor,
-        advantage: List[float],
-        batch: List[int]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        advantage: list[float],
+        batch: list[int]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Training steps for the agent
         """
@@ -234,7 +287,7 @@ class Agent:
         self.critic.optimizer.step()
         return actor_loss, critic_loss, entropy, total_loss
 
-    def _batch_memory(self, num_states) -> List[List[int]]:
+    def _batch_memory(self, num_states) -> list[list[int]]:
         """
         Generate batches of indices to batch different objects stored in memory
         """
@@ -247,7 +300,7 @@ class Agent:
         ]
         return batches
 
-    def _calculate_advantage(self, num_states: int) -> List[float]:
+    def _calculate_advantage(self, num_states: int) -> list[float]:
         """
         Calculates GAE
         """
@@ -271,7 +324,7 @@ class Agent:
 
     def _convert_to_tensor(
         self,
-        state: List[Any]|torch.Tensor
+        state: list[any]|torch.Tensor
     ) -> torch.Tensor:
         """
         Makes sure that the state passed is a torch.Tensor
@@ -284,7 +337,7 @@ class Agent:
     def _sample_networks(
         self,
         state: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Feed the actor and critic the state to get their output
         """
@@ -293,7 +346,7 @@ class Agent:
 
         return dist, value
 
-    def _set_memory(self) -> Dict[str, List[Any]]:
+    def _set_memory(self) -> dict[str, list[any]]:
         """
         Generates a dict that will be used to store eisode states
         """
