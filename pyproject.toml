@@ -7,7 +7,7 @@ authors = [
 ]
 license = "DBEL 1.1"
 readme = "README.md"
-requires-python = "^3.13"
+requires-python = ">=3.13"
 dependencies = [
     "torch (>=2.7.0,<3.0.0)",
     "tqdm (>=4.67.1,<5.0.0)",
