@@ -1,0 +1,318 @@
+import os
+
+import torch
+import numpy as np
+
+from tqdm import tqdm
+from torch.nn.utils.rnn import pad_sequence
+
+from ..networks import PolicyNetwork, ValueNetwork
+
+class Agent:
+    def __init__(
+        self,
+        input_dims: int,
+        output_dims: int,
+        gamma: float = 0.99,
+        epochs: int = 10,
+        gae_lambda: float =0.95,
+        policy_clip: float = 0.1,
+        entropy: float = 0.001,
+        batch_size: int = 64,
+        actor_ridge: float = 0,
+        actor_coefficient: float = 1.,
+        actor_clip_grad_norm: float = None,
+        critic_ridge: float = 0,
+        critic_coefficient: float = 1.,
+        critic_clip_grad_norm: float = None,
+        name: str = 'telestis',
+        verbose: bool = False,
+        load: bool = False,
+        chkpt_dir: str = 'chkpts',
+        device: str = 'cpu',
+        **kwargs
+    ):
+        actor_hparams = {
+            **kwargs.get('actor_hparams', {})
+        }
+        critic_hparams = {
+            **kwargs.get('critic_hparams', {})
+        }
+
+        self._gamma = gamma
+        self._epochs = epochs
+        self._gae_lambda = gae_lambda
+        self._policy_clip = policy_clip
+
+        self._actor_coef = actor_coefficient
+        self._actor_ridge_lambda = actor_ridge
+
+        self._critic_coef = critic_coefficient
+        self._critic_ridge_lambda = critic_ridge
+
+        self._entropy_coef = entropy
+
+        self._name = name
+        self._verbose = verbose
+
+        self.path = os.path.join(
+            chkpt_dir,
+            'ppo'
+        )
+        # os.makedirs(self.path, exist_ok=True)
+ 
+        self.device = device
+
+        self.actor = PolicyNetwork(
+            input_dims=input_dims,
+            output_dims=output_dims,
+            device=device,
+            **actor_hparams
+        )
+        self._actor_clip_grad_norm = actor_clip_grad_norm
+
+        self.critic = ValueNetwork(
+            input_dims=state_dims,
+            device=device,
+            **critic_hparams
+        )
+        self._critic_clip_grad_norm = critic_clip_grad_norm
+
+        self._memory = self._set_memory()
+
+        if load:
+            if os.path.exists(os.path.join(self.path, f"{self._name}.pt")):
+                self._load()
+                load_successfully = True
+            else:
+                RaiseError()
+
+        if self.verbose:
+            if load_successfully:
+                print(f"agent successfully loaded from {self.path}/{self._name}")
+            actor_params = sum(p.numel() for p in self.actor.parameters())
+            critic_params = sum(p.numel() for p in self.critic.parameters())
+            print(f"actor ready on {self.device}. total params: {actor_params}")
+            print(f"critic ready on {self.device}. total params: {critic_params}")
+            print(f"{self.name} initialised with {actor_params+critic_params} params.")
+
+    def choose_action(
+        self,
+        state: List[Any]|torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        state = self._convert_to_tensor(state).to(self.device)
+        dist, value = self._sample_networks(state)
+
+        action = dist.sample()
+        probs = dist.log_prob(action)
+        
+        return action, probs, value
+
+    def store(
+        self,
+        state: Any,
+        action: torch.Tensor,
+        probs: torch.Tensor,
+        value: torch.Tensor,
+        reward: int|float,
+        truncated: bool,
+        terminated: bool
+    ) -> None:
+        """
+        Append a snapshot of the current state/action pair to memory.  
+        """
+        args.locals()
+        args.pop('self')
+
+        for key in self.data:
+            self._memory[key].append(args[key])
+
+    def learn(self) -> Dict[str, List[float]]:
+        """
+        Main learning function for PPO agents.
+        For details look up the paper in arxiv  
+        """
+        num_states = len(self._memory['states'])
+        loss_history = dict(
+            actor = []
+            critic = []
+            entropy = []
+            total = []
+        )
+        for _ in tqdm(range(self._epochs), disable=not self._verbose, desc="Learning Epoch", leave=False):
+            advantage = self._calculate_advantage(num_states)
+
+            for batch in self._batch_memory(num_states):
+                self.actor.optimizer.zero_grad()
+                self.critic.optimizer.zero_grad()
+
+                states = self._memory['states'][batch]
+                states = self._convert_to_tensor(states)
+
+                losses = self._train_networks(states, advantage, batch)
+                for key, tensor in zip(loss_history.keys(), losses):
+                    loss_history[key].append(tensor.item())
+            torch.cuda.empty_cache()
+        self._memory = self._set_memory()
+        torch.cuda.empty_cache()
+        return loss_history
+
+    def _train_networks(
+        self,
+        states: torch.Tensor,
+        advantage: List[float],
+        batch: List[int]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Training steps for the agent
+        """
+        dist, value = self._sample_networks(states)
+        del states
+
+        entropy = dist.entropy().mean()
+
+        actions = self._memory['actions'][batch]
+        actions = self._convert_to_tensor(actions)
+        new_probs = dist.log_prob(actions)
+        del dist, actions
+
+        old_probs = self._memory['probs'][batch]
+        old_probs = self._convert_to_tensor(old_probs)
+        prob_ratio = (new_probs-old_probs).exp()
+        del new_probs, old_probs
+
+        batch_advantage = advantage[batch]
+        batch_advantage = self._convert_to_tensor(batch_advantage)
+
+        weighted_probs = batch_advantage*prob_ratio
+        weighted_clipped_probs = torch.clamp(
+            prob_ratio,
+            min=1-self.policy_clip,
+            max=1+self.policy_clip
+        )*batch_advantage
+        del prob_ratio
+
+        actor_loss = torch.min(
+            weighted_probs,
+            weighted_clipped_probs
+        ).mean()
+        del weighted_probs, weighted_clipped_probs
+
+        actor_ridge = sum(p.pow(2).sum() for p in self.actor.parameters())
+        actor_loss += self._actor_ridge_lambda*actor_ridge
+        del actor_ridge
+
+        batch_values = self._memory['values'][batch]
+        returns = batch_advantage+batch_values
+        del batch_advantage, batch_values
+
+        critic_loss = ((value-returns)**2).mean()
+        critic_ridge = sum(p.pow(2).sum() for p in self.critic.parameters())
+        critic_loss += self._critic_ridge_lambda*critic_ridge
+        del returns, critic_ridge
+
+        total_loss = self._calculate_total_loss(
+            actor_loss,
+            critic_loss,
+            entropy
+        )
+        total_loss.backward()
+
+        if self._actor_clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm_(
+                self.actor.parameters(),
+                max_norm=self._actor_clip_grad_norm
+            )
+        if self._critic_clip_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm_(
+                self.critic.parameters(),
+                max_norm=self._critic_clip_grad_norm
+            )
+
+        self.actor.optimizer.step()
+        self.critic.optimizer.step()
+        return actor_loss, critic_loss, entropy, total_loss
+
+    def _batch_memory(self, num_states) -> List[List[int]]:
+        """
+        Generate batches of indices to batch different objects stored in memory
+        """
+        batch_start = np.arange(0, num_states, self._batch_size)
+        idx = np.arange(num_states)
+        np.random.shuffle(idx)
+        batches = [
+            indices[i:i+self._batch_size]
+            for i in batch_start
+        ]
+        return batches
+
+    def _calculate_advantage(self, num_states: int) -> List[float]:
+        """
+        Calculates GAE
+        """
+        rewards = self._memory['rewards']
+        values = self._memory['values']
+        dones = [
+            int(trunc or term) for trunc, term in zip(
+                self._memory['truncated'], self._memory['terminated']
+            )
+        ]
+
+        gae = np.zeros(num_states)
+        for t in range(len(gae)):
+            discount = 1
+            a_t = 0
+            for k in range(t, len(gae)):
+                a_t += discount*(rewards[k]+self._gamma*values[k+1]*(1-dones[k]))
+                discount *=self._gamma*self._gae_lambda
+            gae[t] = a_t
+        return gae
+
+    def _convert_to_tensor(
+        self,
+        state: List[Any]|torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Makes sure that the state passed is a torch.Tensor
+        """
+        if isinstance(state, torch.Tensor):
+            return state.to(self.device)
+        else:
+            return torch.tensor(state).to(self.device)
+
+    def _sample_networks(
+        self,
+        state: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Feed the actor and critic the state to get their output
+        """
+        dist = self.actor(state)
+        value = self.critic(state)
+
+        return dist, value
+
+    def _set_memory(self) -> Dict[str, List[Any]]:
+        """
+        Generates a dict that will be used to store eisode states
+        """
+        return dict(
+            states=[],
+            actions=[],
+            probs=[],
+            values=[],
+            rewards=[],
+            truncated=[],
+            terminated=[]
+        )
+
+    def _calculate_total_loss(actor_loss, critic_loss, entropy):
+        """
+        Simple weighted sum to get the total loss
+        """
+        actor_contrib = self._actor_coef*actor_loss
+        critic_contrib = self._critic_coef*critic_loss
+        entropy_contrib = self._entropy_coef*entropy
+        loss = actor_contrib + critic_contrib - entropy_contrib
+        return loss

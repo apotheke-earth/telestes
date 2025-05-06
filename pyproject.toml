@@ -1,0 +1,23 @@
+[project]
+name = "telestes"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Vasilis Valatsos",email = "aethrvmn@apotheke.earth"}
+]
+license = "DBEL 1.1"
+readme = "README.md"
+requires-python = "^3.13"
+dependencies = [
+    "torch (>=2.7.0,<3.0.0)",
+    "tqdm (>=4.67.1,<5.0.0)",
+    "numpy (>=2.2.5,<3.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "telestes", from = "src"}]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
