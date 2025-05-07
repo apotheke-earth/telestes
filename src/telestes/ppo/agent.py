@@ -41,6 +41,7 @@ class Agent:
 
         self._gamma = gamma
         self._epochs = epochs
+        self._batch_size = batch_size
         self._gae_lambda = gae_lambda
         self._policy_clip = policy_clip
 
@@ -81,8 +82,6 @@ class Agent:
 
         self._memory = self._set_memory()
 
-        if load:
-            self._load()
 
         if self._verbose:
             actor_params = sum(p.numel() for p in self.actor.parameters())
@@ -90,6 +89,9 @@ class Agent:
             print(f"actor ready on {self.device}. total params: {actor_params}")
             print(f"critic ready on {self.device}. total params: {critic_params}")
             print(f"{self._name} initialised with {actor_params+critic_params} params.")
+
+        if load:
+            self._load()
 
     def choose_action(
         self,
@@ -144,7 +146,7 @@ class Agent:
                 self.actor.optimizer.zero_grad()
                 self.critic.optimizer.zero_grad()
 
-                states = self._memory['states'][batch]
+                states = [self._memory['states'][i] for i in batch]
                 states = self._convert_to_tensor(states)
 
                 losses = self._train_networks(states, advantage, batch)
@@ -185,7 +187,6 @@ class Agent:
             self.path,
             f"{self._name}.pt"
         )
-        print(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"Checkpoint {path} does not exist.")
 
@@ -226,24 +227,24 @@ class Agent:
 
         entropy = dist.entropy().mean()
 
-        actions = self._memory['actions'][batch]
+        actions = [self._memory['actions'][i] for i in batch]
         actions = self._convert_to_tensor(actions)
         new_probs = dist.log_prob(actions)
         del dist, actions
 
-        old_probs = self._memory['probs'][batch]
+        old_probs = [self._memory['probs'][i] for i in batch]
         old_probs = self._convert_to_tensor(old_probs)
         prob_ratio = (new_probs-old_probs).exp()
         del new_probs, old_probs
 
-        batch_advantage = advantage[batch]
+        batch_advantage = [advantage[i] for i in batch]
         batch_advantage = self._convert_to_tensor(batch_advantage)
 
         weighted_probs = batch_advantage*prob_ratio
         weighted_clipped_probs = torch.clamp(
             prob_ratio,
-            min=1-self.policy_clip,
-            max=1+self.policy_clip
+            min=1-self._policy_clip,
+            max=1+self._policy_clip
         )*batch_advantage
         del prob_ratio
 
@@ -257,7 +258,9 @@ class Agent:
         actor_loss += self._actor_ridge_lambda*actor_ridge
         del actor_ridge
 
-        batch_values = self._memory['values'][batch]
+        batch_values = torch.tensor(
+            [self._memory['values'][i] for i in batch]
+        ).to(self.device)
         returns = batch_advantage+batch_values
         del batch_advantage, batch_values
 
@@ -317,7 +320,7 @@ class Agent:
         for t in range(len(gae)):
             discount = 1
             a_t = 0
-            for k in range(t, len(gae)):
+            for k in range(t, len(gae)-1):
                 a_t += discount*(rewards[k]+self._gamma*values[k+1]*(1-dones[k]))
                 discount *=self._gamma*self._gae_lambda
             gae[t] = a_t
@@ -349,7 +352,7 @@ class Agent:
 
     def _set_memory(self) -> dict[str, list[any]]:
         """
-        Generates a dict that will be used to store eisode states
+        Generates a dict that will be used to store episode states
         """
         return dict(
             states=[],
