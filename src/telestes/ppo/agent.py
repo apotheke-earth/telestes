@@ -118,10 +118,9 @@ class Agent:
         Append a snapshot of the current state/action pair to memory.  
         """
         args = locals()
-        print(args)
         args.pop('self')
 
-        for key in self.data:
+        for key in self._memory:
             self._memory[key].append(args[key])
 
     def learn(self) -> dict[str, list[float]]:
