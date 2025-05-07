@@ -5,7 +5,6 @@ import torch
 import numpy as np
 
 from tqdm import tqdm
-from torch.nn.utils.rnn import pad_sequence
 
 from ..networks import PolicyNetwork, ValueNetwork
 
@@ -118,7 +117,8 @@ class Agent:
         """
         Append a snapshot of the current state/action pair to memory.  
         """
-        args.locals()
+        args = locals()
+        print(args)
         args.pop('self')
 
         for key in self.data:
@@ -292,8 +292,8 @@ class Agent:
         Generate batches of indices to batch different objects stored in memory
         """
         batch_start = np.arange(0, num_states, self._batch_size)
-        idx = np.arange(num_states)
-        np.random.shuffle(idx)
+        indices = np.arange(num_states)
+        np.random.shuffle(indices)
         batches = [
             indices[i:i+self._batch_size]
             for i in batch_start
@@ -360,7 +360,7 @@ class Agent:
             terminated=[]
         )
 
-    def _calculate_total_loss(actor_loss, critic_loss, entropy):
+    def _calculate_total_loss(self, actor_loss, critic_loss, entropy):
         """
         Simple weighted sum to get the total loss
         """
