@@ -117,11 +117,13 @@ class Agent:
         """
         Append a snapshot of the current state/action pair to memory.  
         """
-        args = locals()
-        args.pop('self')
-
-        for key in self._memory:
-            self._memory[key].append(args[key])
+        self._memory['states'].append(state)
+        self._memory['actions'].append(action)
+        self._memory['probs'].append(probs)
+        self._memory['values'].append(value)
+        self._memory['rewards'].append(reward)
+        self._memory['truncated'].append(truncated)
+        self._memory['terminated'].append(terminated)
 
     def learn(self) -> dict[str, list[float]]:
         """
