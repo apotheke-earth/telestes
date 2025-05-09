@@ -1,15 +1,11 @@
-import warnings
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as functional
 import torch.optim as optim
+import torch.distributions as dists
 
-from torch.distributions.categorical import Categorical
+from .architectures.transformer import TransformerBlock, AttentionGate
+from .architectures.linear import LinearBlock
 
-from .transformer import TransformerBlock, AttentionGate
-
-from .utils import generate_layers
 
 class PolicyNetwork(nn.Module):
     def __init__(
@@ -17,72 +13,74 @@ class PolicyNetwork(nn.Module):
         input_dims: int,
         output_dims: int,
         transformer_layers: int = 2,
-        optimizer: optim.Optimizer = optim.Adam,
+        linear_layers: int = 2,
+        optimizer_class: optim.Optimizer = optim.Adam,
         device: str = 'cpu',
         **kwargs
     ):
-        gate_hparams = {
-            **kwargs.get("gate", {})
-        }
-        network_defaults = dict(
-            layers=None,
-            activation_fn=None
-        )
-        network_architecture = {
-            **network_defaults,
-            **kwargs.get("network", {})
-        }
+        """
+        Initialize the Policy Network (Actor in A/C settings).
+        """
+        super(PolicyNetwork, self).__init__()
+
         transformer_hparams = {
             **kwargs.get("transformer", {})
         }
-        super(PolicyNetwork, self).__init__()
-
         self.transformer = nn.ModuleList(
             [
                 TransformerBlock(
                     embed_dims=input_dims,
-                    **transformer_hparams,
+                    **transformer_hparams
                 )
                 for _ in range(transformer_layers)
             ]
         )
-        
+
+        gate_hparams = {
+            **kwargs.get("gate", {})
+        }
         self.gate = AttentionGate(
             embed_dims=input_dims,
             **gate_hparams
         )
 
-        if network_architecture['layers'] is not None:
-            layers = generate_layers(
+        linear_hparams = {
+            **kwargs.get("linear", {})
+        }
+        self.linear = nn.Sequential(
+            LinearBlock(
                 input_dims=input_dims,
                 output_dims=output_dims,
-                **network_architecture
-            )
-            self.actor = nn.ModuleList(layers)
-        else:
-            self.actor = nn.ModuleList(
-                [
-                    nn.Linear(input_dims, output_dims)
-                ]
-            )
+                **linear_hparams
+            ),
+            nn.Softmax(dim=-1)
+        )
 
         self.to(device)
 
         optimizer_hparams = {
-            **kwargs.get("optimizer_hparams", {})
+            **kwargs.get("optimizer", {})
         }
-        self.optimizer = optimizer(
+        self.optimizer = optimizer_class(
             self.parameters(),
             **optimizer_hparams
         )
 
-    def forward(self, state, mask=None):
+    def forward(
+        self,
+        state: torch.Tensor,
+        mask=None
+    ) -> dists.distribution.Distribution:
+        """
+        Output a distribution over the action space based on the current state.
+        """
         out = state
         for layer in self.transformer:
             out = layer(out, out, out, mask)
         out = self.gate(out)
-        for layer in self.actor:
+        for layer in self.linear:
             out = layer(out)
-        out = functional.softmax(out, -1)
-        dist = Categorical(out)
+        dist = dists.categorical.Categorical(out)
         return dist
+        
+

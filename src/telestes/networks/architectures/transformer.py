@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 
 class SelfAttention(nn.Module):
     def __init__(
@@ -10,36 +9,31 @@ class SelfAttention(nn.Module):
     ):
         """
         Initialize the self-attention mechanism.
-
-        Parameters:
-        embed_size (int): The size of the input embeddings.
-        heads (int): The number of attention heads in the multi-head attention mechanism.
         """
         super(SelfAttention, self).__init__()
 
         self.embed_dims = embed_dims
         self.heads = heads
-        self.head_dim = embed_dims // heads
 
-        assert (self.head_dim * heads == embed_dims), "Embed size needs to be divisible by heads"
+        self.head_dim = embed_dims//heads
+
+        assert (self.head_dim*heads==embed_dims), f"heads={heads} must divide embed size {embed_dims}"
 
         self.values = nn.Linear(self.head_dim, self.head_dim, bias=False)
         self.keys = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.queries = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.fc_out = nn.Linear(self.embed_dims, self.embed_dims)
+        self.queries= nn.Linear(self.head_dim, self.head_dim, bias=False)
 
-    def forward(self, values, keys, query, mask):
+        self.output = nn.Linear(self.embed_dims, self.embed_dims)
+
+    def forward(
+        self,
+        values: torch.Tensor,
+        keys: torch.Tensor,
+        query: torch.Tensor,
+        mask=None
+    ) -> torch.Tensor:
         """
-        Perform the forward pass of the self-attention mechanism.
-
-        Parameters:
-        values (Tensor): The values used in attention calculation.
-        keys (Tensor): The keys used in attention calculation.
-        query (Tensor): The query used in attention calculation.
-        mask (Tensor, optional): A mask to prevent attention to certain positions (default: None).
-
-        Returns:
-        Tensor: The output of the attention mechanism after applying the linear transformation.
+        Forward pass for the attention mechanism
         """
         N = query.shape[0]
 
@@ -53,8 +47,8 @@ class SelfAttention(nn.Module):
 
         values = self.values(values)
         keys = self.keys(keys)
-        query = self.queries(query)
-
+        query = self.query(query)
+        
         # say the magic words: "nqhd,nkhd->nhqk"
         energy = torch.einsum("nqhd,nkhd->nhqk", [query, keys])
         if mask is not None:
@@ -71,60 +65,53 @@ class SelfAttention(nn.Module):
         # since we "say" or "write" the magic words in a "spellbook"
         # and then observe the impact of our words.
         # nevertheless i like the idea of only passing strings as args counting
-
-        out = self.fc_out(out.reshape(
-            N, query_len, self.heads*self.head_dim
-        ))
+        
+        out = self.output(
+            out.reshape(
+                N, query_len, self.heads*self.head_dim                  
+            )
+        )
         return out
 
-        
 class TransformerBlock(nn.Module):
     def __init__(
         self,
         embed_dims: int,
         heads: int = 8,
         dropout: float = 0,
-        forward_expansion: int = 4
+        forward_expansion: int = 1,
+        activation_function: nn.Module = nn.ReLU
     ):
         """
-        Initialize the transformer block, which includes multi-head self-attention 
-        and a feed-forward neural network.
+        Initialize a transformer block,
 
-        Parameters:
-        embed_size (int): The size of the input embeddings.
-        heads (int): The number of attention heads for multi-head attention.
-        dropout (float): The dropout rate for regularization.
-        forward_expansion (int): The expansion factor for the feed-forward network.
+        We use multi-headed self-attention and feed-forward networks,
+        as per the paper
         """
         super(TransformerBlock, self).__init__()
 
         self.attention = SelfAttention(embed_dims, heads)
-        self.norm1 = nn.LayerNorm(embed_dims)
-        self.norm2 = nn.LayerNorm(embed_dims)
+        self.normalizer = nn.LayerNorm(embed_dims)
         self.feed_forward = nn.Sequential(
             nn.Linear(embed_dims, forward_expansion*embed_dims),
-            nn.ReLU(),
+            activation_function(),
             nn.Linear(forward_expansion*embed_dims, embed_dims)
         )
-        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, value, key, query, mask):
+    def forward(
+        self,
+        value: torch.Tensor,
+        key: torch.Tensor,
+        query: torch.Tensor,
+        mask=None
+    ) -> torch.Tensor:
         """
-        Perform the forward pass of the transformer block.
-
-        Parameters:
-        value (Tensor): The values used in attention calculation.
-        key (Tensor): The keys used in attention calculation.
-        query (Tensor): The query used in attention calculation.
-        mask (Tensor, optional): A mask to prevent attention to certain positions (default: None).
-
-        Returns:
-        Tensor: The output of the transformer block after attention and feed-forward network.
+        Forward pass through the entire block, as per the paper
         """
         attention = self.attention(value, key, query, mask)
-        x = self.dropout(self.norm1(attention+query))
+        x = self.dropout(self.normalizer(attention+query))
         forward = self.feed_forward(x)
-        out = self.dropout(self.norm2(forward+x))
+        out = self.dropout(self.normalizer(forward+x))
         return out
 
 class AttentionGate(nn.Module):
@@ -133,6 +120,11 @@ class AttentionGate(nn.Module):
         embed_dims: int,
         heads: int = 4
     ):
+        """
+        Initialize the attention gate
+
+        The gate reduces the dims of the transformer output
+        """
         super(AttentionGate, self).__init__()
 
         self.attention = SelfAttention(embed_dims, heads)
@@ -145,11 +137,11 @@ class AttentionGate(nn.Module):
         out = self.attention(
             token_embeddings,
             token_embeddings,
-            token_embeddings,
-            mask = None
+            token_embeddings
         )
 
         weights = self.aggregator(out)
-
-        return (weights*token_embeddings).sum(dim=1)
+        weighted_sum = (weights*token_embeddings).sum(dim=1)
+        return weighted_sum
         
+    

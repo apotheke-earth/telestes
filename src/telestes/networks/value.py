@@ -1,84 +1,81 @@
-import warnings
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as functional
 import torch.optim as optim
 
-from .transformer import TransformerBlock, AttentionGate
+from .architectures.transformer import TransformerBlock, AttentionGate
+from .architectures.linear import LinearBlock
 
-from .utils import generate_layers
 
-class ValueNetwork(nn.Module):
+class PolicyNetwork(nn.Module):
     def __init__(
         self,
-        input_dims,
+        input_dims: int,
         transformer_layers: int = 2,
-        optimizer: optim.Optimizer = optim.Adam,
-        device='cpu',
+        linear_layers: int = 2,
+        optimizer_class: optim.Optimizer = optim.Adam,
+        device: str = 'cpu',
         **kwargs
-        ):
-        gate_hparams = {
-            **kwargs.get("gate", {})
-        }
-        network_defaults = dict(
-            layers=None,
-            activation_fn=None
-        )
-        network_architecture = {
-            **network_defaults,
-            **kwargs.get("network", {})
-        }
+    ):
+        """
+        Initialize the Value Network (Critic in A/C settings).
+        """
+        super(PolicyNetwork, self).__init__()
+
         transformer_hparams = {
             **kwargs.get("transformer", {})
         }
-        super(ValueNetwork, self).__init__()
-
         self.transformer = nn.ModuleList(
             [
                 TransformerBlock(
                     embed_dims=input_dims,
-                    **transformer_hparams,
+                    **transformer_hparams
                 )
                 for _ in range(transformer_layers)
             ]
         )
 
+        gate_hparams = {
+            **kwargs.get("gate", {})
+        }
         self.gate = AttentionGate(
             embed_dims=input_dims,
             **gate_hparams
         )
 
-        if network_architecture['layers'] is not None:
-            layers = generate_layers(
-                input_dims=input_dims,
-                output_dims=1,
-                **network_architecture
-            )
-            self.critic = nn.ModuleList(layers)
-        else:
-            self.critic = nn.ModuleList(
-                [
-                    nn.Linear(input_dims, 1)
-                ]
-            )
-
-        optimizer_hparams = {
-            **kwargs.get("optimizer_hparams", {})
+        linear_hparams = {
+            **kwargs.get("linear", {})
         }
-        self.optimizer = optimizer(
-            self.parameters(),
-            **optimizer_hparams
+        self.linear = LinearBlock(
+            input_dims=input_dims,
+            output_dims=1,
+            **linear_hparams
         )
 
         self.to(device)
 
-    def forward(self, state, mask=None):
+        optimizer_hparams = {
+            **kwargs.get("optimizer", {})
+        }
+        self.optimizer = optimizer_class(
+            self.parameters(),
+            **optimizer_hparams
+        )
+
+    def forward(
+        self,
+        state: torch.Tensor,
+        mask=None
+    ) -> torch.Tensor:
+        """
+        Output an evaluation of the current state.
+        """
         out = state
         for layer in self.transformer:
             out = layer(out, out, out, mask)
         out = self.gate(out)
-        for layer in self.critic:
+        for layer in self.linear:
             out = layer(out)
         value = out
         return value
+        
+
