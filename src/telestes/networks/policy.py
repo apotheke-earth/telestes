@@ -55,6 +55,7 @@ class PolicyNetwork(nn.Module):
             ),
             nn.Softmax(dim=-1)
         )
+        print(self.linear)
 
         self.to(device)
 
@@ -78,8 +79,7 @@ class PolicyNetwork(nn.Module):
         for layer in self.transformer:
             out = layer(out, out, out, mask)
         out = self.gate(out)
-        for layer in self.linear:
-            out = layer(out)
+        out = self.linear(out)
         dist = dists.categorical.Categorical(out)
         return dist
         

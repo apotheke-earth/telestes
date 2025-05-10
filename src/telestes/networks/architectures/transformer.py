@@ -47,7 +47,7 @@ class SelfAttention(nn.Module):
 
         values = self.values(values)
         keys = self.keys(keys)
-        query = self.query(query)
+        query = self.queries(query)
         
         # say the magic words: "nqhd,nkhd->nhqk"
         energy = torch.einsum("nqhd,nkhd->nhqk", [query, keys])
@@ -97,6 +97,7 @@ class TransformerBlock(nn.Module):
             activation_function(),
             nn.Linear(forward_expansion*embed_dims, embed_dims)
         )
+        self.dropout = nn.Dropout(dropout)
 
     def forward(
         self,

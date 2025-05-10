@@ -15,12 +15,12 @@ class LinearBlock(nn.Module):
         layer_dims = [input_dims] + layers + [output_dims]
         network = []
 
-        for i in range(len(layer_dims)):
+        for i in range(len(layer_dims)-1):
             network.append(nn.Linear(layer_dims[i], layer_dims[i+1]))
             if i < len(layer_dims) - 2:
                 network.append(activation_fn())
             
-        self.network = nn.Sequential(*layers)
+        self.network = nn.Sequential(*network)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.network(x)

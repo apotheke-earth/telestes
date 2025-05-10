@@ -6,7 +6,7 @@ from .architectures.transformer import TransformerBlock, AttentionGate
 from .architectures.linear import LinearBlock
 
 
-class PolicyNetwork(nn.Module):
+class ValueNetwork(nn.Module):
     def __init__(
         self,
         input_dims: int,
@@ -19,7 +19,7 @@ class PolicyNetwork(nn.Module):
         """
         Initialize the Value Network (Critic in A/C settings).
         """
-        super(PolicyNetwork, self).__init__()
+        super(ValueNetwork, self).__init__()
 
         transformer_hparams = {
             **kwargs.get("transformer", {})
@@ -73,8 +73,7 @@ class PolicyNetwork(nn.Module):
         for layer in self.transformer:
             out = layer(out, out, out, mask)
         out = self.gate(out)
-        for layer in self.linear:
-            out = layer(out)
+        out = self.linear(out)
         value = out
         return value
         
