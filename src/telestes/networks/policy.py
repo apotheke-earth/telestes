@@ -55,8 +55,7 @@ class PolicyNetwork(nn.Module):
             ),
             nn.Softmax(dim=-1)
         )
-        print(self.linear)
-
+        
         self.to(device)
 
         optimizer_hparams = {
