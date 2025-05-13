@@ -23,7 +23,7 @@ class ValueNetwork(nn.Module):
 
         self.transformer_layers = transformer_layers
 
-        if transformer_layers
+        if transformer_layers:
             transformer_hparams = {
                 **kwargs.get("transformer", {})
             }
@@ -73,7 +73,7 @@ class ValueNetwork(nn.Module):
         Output an evaluation of the current state.
         """
         out = state
-        if self.transformer_layers
+        if self.transformer_layers:
             for layer in self.transformer:
                 out = layer(out, out, out, mask)
             out = self.gate(out)
