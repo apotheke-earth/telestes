@@ -21,26 +21,29 @@ class ValueNetwork(nn.Module):
         """
         super(ValueNetwork, self).__init__()
 
-        transformer_hparams = {
-            **kwargs.get("transformer", {})
-        }
-        self.transformer = nn.ModuleList(
-            [
-                TransformerBlock(
-                    embed_dims=input_dims,
-                    **transformer_hparams
-                )
-                for _ in range(transformer_layers)
-            ]
-        )
+        self.transformer_layers = transformer_layers
 
-        gate_hparams = {
-            **kwargs.get("gate", {})
-        }
-        self.gate = AttentionGate(
-            embed_dims=input_dims,
-            **gate_hparams
-        )
+        if transformer_layers
+            transformer_hparams = {
+                **kwargs.get("transformer", {})
+            }
+            self.transformer = nn.ModuleList(
+                [
+                    TransformerBlock(
+                        embed_dims=input_dims,
+                        **transformer_hparams
+                    )
+                    for _ in range(transformer_layers)
+                ]
+            )
+
+            gate_hparams = {
+                **kwargs.get("gate", {})
+            }
+            self.gate = AttentionGate(
+                embed_dims=input_dims,
+                **gate_hparams
+            )
 
         linear_hparams = {
             **kwargs.get("linear", {})
@@ -70,9 +73,10 @@ class ValueNetwork(nn.Module):
         Output an evaluation of the current state.
         """
         out = state
-        for layer in self.transformer:
-            out = layer(out, out, out, mask)
-        out = self.gate(out)
+        if self.transformer_layers
+            for layer in self.transformer:
+                out = layer(out, out, out, mask)
+            out = self.gate(out)
         out = self.linear(out)
         value = out
         return value
