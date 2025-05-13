@@ -7,7 +7,7 @@ class LinearBlock(nn.Module):
         input_dims: int,
         output_dims: int,
         layers: list[int] = None,
-        activation_fn: nn.Module = nn.ReLU
+        activation_function: nn.Module = nn.ReLU
     ):
         super(LinearBlock, self).__init__()
 
@@ -18,7 +18,7 @@ class LinearBlock(nn.Module):
         for i in range(len(layer_dims)-1):
             network.append(nn.Linear(layer_dims[i], layer_dims[i+1]))
             if i < len(layer_dims) - 2:
-                network.append(activation_fn())
+                network.append(activation_function())
             
         self.network = nn.Sequential(*network)
         
