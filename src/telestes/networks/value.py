@@ -45,6 +45,8 @@ class ValueNetwork(nn.Module):
                 **gate_hparams
             )
 
+            self.normalizer = nn.LayerNorm(input_dims)
+
         linear_hparams = {
             **kwargs.get("linear", {})
         }
@@ -77,6 +79,7 @@ class ValueNetwork(nn.Module):
             for layer in self.transformer:
                 out = layer(out, out, out, mask)
             out = self.gate(out)
+            out = self.normalizer(out)
         out = self.linear(out)
         value = out
         return value

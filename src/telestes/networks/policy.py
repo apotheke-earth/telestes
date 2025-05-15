@@ -47,6 +47,8 @@ class PolicyNetwork(nn.Module):
                 **gate_hparams
             )
 
+            self.normalizer = nn.LayerNorm(input_dims)
+
         linear_hparams = {
             **kwargs.get("linear", {})
         }
@@ -83,7 +85,7 @@ class PolicyNetwork(nn.Module):
             for layer in self.transformer:
                 out = layer(out, out, out, mask)
             out = self.gate(out)
-
+            out = self.normalizer(out)
         out = self.linear(out)
         dist = dists.categorical.Categorical(out)
         return dist
