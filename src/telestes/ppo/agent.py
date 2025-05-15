@@ -93,6 +93,7 @@ class Agent:
         if load:
             self._load()
 
+    @torch.no_grad()
     def choose_action(
         self,
         state: list[any]|torch.Tensor
