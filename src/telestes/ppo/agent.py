@@ -17,6 +17,7 @@ class Agent:
         epochs: int = 10,
         gae_lambda: float =0.95,
         policy_clip: float = 0.1,
+        value_clip: float = 0.,
         entropy: float = 0.001,
         batch_size: int = 64,
         actor_ridge: float = 0,
@@ -25,6 +26,7 @@ class Agent:
         critic_ridge: float = 0,
         critic_coefficient: float = .5,
         critic_clip_grad_norm: float = None,
+        normalize_advantage: bool = False,
         name: str = 'telestis',
         verbose: bool = False,
         load: bool = False,
@@ -44,6 +46,9 @@ class Agent:
         self._batch_size = batch_size
         self._gae_lambda = gae_lambda
         self._policy_clip = policy_clip
+        self._value_clip = value_clip
+
+        self._normalize_advantage = normalize_advantage
 
         self._actor_coef = actor_coefficient
         self._actor_ridge_lambda = actor_ridge
@@ -240,6 +245,10 @@ class Agent:
 
         batch_advantage = [advantage[i] for i in batch]
         batch_advantage = self._convert_to_tensor(batch_advantage)
+        if self._normalize_advantage:
+            batch_advantage = (
+                batch_advantage-batch_advantage.mean()
+            )/(batch_advantage.std()+1e-8)
 
         weighted_probs = batch_advantage*prob_ratio
         weighted_clipped_probs = torch.clamp(
@@ -265,7 +274,13 @@ class Agent:
         returns = batch_advantage+batch_values
         del batch_advantage, batch_values
 
-        critic_loss = ((value-returns)**2).mean()
+        if self._value_clip:
+            critic_loss = ((value-returns).clamp(
+                -self._value_clip,
+                self._value_clip
+            )**2).mean()
+        else:
+            critic_loss = ((value-returns)**2).mean()
         critic_ridge = sum(p.pow(2).sum() for p in self.critic.parameters())
         critic_loss += self._critic_ridge_lambda*critic_ridge
         del returns, critic_ridge
