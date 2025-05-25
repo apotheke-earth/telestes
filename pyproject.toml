@@ -1,6 +1,6 @@
 [project]
 name = "telestes"
-version = "0.1.5a0"
+version = "0.1.5"
 description = "transformer-based reinforcment learning agents."
 authors = [
     {name = "Vasilis Valatsos",email = "aethrvmn@apotheke.earth"}
