@@ -1,0 +1,10 @@
+Training Public License (TPL) v1.0
+
+Copyright © 2025 Vasileios Valatsos
+
+This code and content is licensed under the GPLv3 or later, with the following special condition:
+
+If you use any part of this code, notes, or data for training, fine-tuning, or evaluating a machine learning system (including but not limited to neural networks, large language models, or any algorithm where this content influences the resulting system),
+you must release all resulting models, weights, and related code under the GPLv3 or later.
+
+All other uses are governed by the regular terms of the GPLv3 or later.
